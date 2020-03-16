@@ -1,8 +1,25 @@
 // (c) Copyright 2018 Micro Focus or one of its affiliates.
+const request = require('request-promise');
 var SDW = {};
 SDW.base10 = "0123456789";
 SDW.base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-let PIE = {L: 6, E: 4, K: "7C4C02E4DA27BF6926A52461AF0958A9", key_id: "50a76db7", phase: 0}
+let get_PIE = async ()=>{
+	let options = {
+		url:'https://pie-production.walgreens.com/pie/v1/Walgreens/getkey.js',
+		method:'GET',
+		headers:{
+			'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36 OPR/67.0.3575.79'
+		}
+	};
+	let responseHTML = await request(options);
+	
+	let L =  parseInt(responseHTML.match(new RegExp('(?<='+'PIE.L = '+'+).*?(?='+';'+')',"gs"))[0]);
+	let E = parseInt(responseHTML.match(new RegExp('(?<='+'PIE.E = '+'+).*?(?='+';'+')',"gs"))[0]);
+	let K = responseHTML.match(new RegExp('(?<='+'PIE.K = "'+'+).*?(?='+'"'+')',"gs"))[0];
+	let key_id = responseHTML.match(new RegExp('(?<='+'PIE.key_id = "'+'+).*?(?='+'"'+')',"gs"))[0];
+	let phase = parseInt(responseHTML.match(new RegExp('(?<='+'PIE.phase = '+'+).*?(?='+';'+')',"gs"))[0]);
+	return {L,E,K,key_id,phase};
+}
 SDW.luhn = function(a) {
     var e = a.length - 1;
     var b = 0;
@@ -75,7 +92,7 @@ SDW.integrity = function(a, e, c) {
     return AES.WordToHex(g[0]) + AES.WordToHex(g[1])
 };
 
-function ProtectPANandCVV(t, o, k) {
+function ProtectPANandCVV(t, o, k,PIE) {
     var l = SDW.distill(t);
     var r = SDW.distill(o);
     if (l.length < 13 || l.length > 19 || r.length > 4 || r.length == 1 || r.length == 2) {
@@ -127,7 +144,7 @@ function ValidatePANChecksum(b) {
     return (a.length >= 13 && a.length <= 19 && SDW.luhn(a) == 0)
 }
 
-function ProtectString(g, h) {
+function ProtectString(g, h,PIE) {
     var f = SDW_UTF8.encode(g);
     if (f.length < 2 || f.length > 256) {
         return null
@@ -677,10 +694,10 @@ function getNumber(string) {
 }
 var encrypetedCardNo = "";
 var subfid9B = "";
-function volatageCard(ccNumber) {
+async function volatageCard(ccNumber) {
     ccNumber = ccNumber.replace(/ +/g, "");
     this.returnValue = '';
-    var voltageOutput = getEncryptionValue(ccNumber);
+    var voltageOutput = await getEncryptionValue(ccNumber);
     if (voltageOutput && voltageOutput === "Invalid") {
         console.log("Invalid");
         console.log("We're unable to process your request at this time. Please try again.");
@@ -750,9 +767,11 @@ function is_pie_encryption_download_error() {
     }
     return false;
 }
-function getEncryptionValue(value) {
-    
-            var card = ProtectPANandCVV(value, '', true);
+async function getEncryptionValue(value) {
+	        let PIE = await get_PIE();
+
+            var card = ProtectPANandCVV(value, '', true,PIE);
+
             var BA_byte1_dataType;
             var BA_byte2_encryptType;
             var tag_BA;
@@ -790,6 +809,7 @@ function getEncryptionValue(value) {
        
 }
 function setLength(res) {
+	
     if (res.length < 10) {
         return "00" + res.length;
     } else if (res.length >= 10 && res.length < 100) {
